@@ -1,0 +1,18 @@
+[{ "group-id": "test-group-1",
+   "topics": [{"name": "topic-1",
+               "partitions": [{"partition": 0, "offset": 100},
+                              {"partition": 1, "offset": 201}]},
+              {"name": "topic-2",
+               "partitions": [{"partition": 0, "offset": 101}]}
+             ]
+ },
+ { "group-id": "test-group-2",
+   "retention-seconds": 0,
+   "topics": [{"name": "topic-1",
+               "partitions": [{"partition": 0, "offset": 100},
+                              {"partition": 1, "offset": 201}]},
+              {"name": "topic-2",
+               "partitions": [{"partition": 0, "offset": 101}]}
+             ]
+ }
+]

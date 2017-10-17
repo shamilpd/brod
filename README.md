@@ -424,13 +424,14 @@ Start an Erlang shell with brod started
 ./scripts/brod meta -b localhost
 ```
 
-### Produce a message
+### Produce a Message
+
 ```
 ./scripts/brod send -b localhost -t test-topic -p 0 -k "key" -v "value"
 
 ```
 
-### Fetch a message
+### Fetch a Message
 
 ```
 ./scripts/brod fetch -b localhost -t test-topic -p 0 --fmt 'io:format("offset=~p, ts=~p, key=~s, value=~s\n", [Offset, Ts, Key, Value])'
@@ -444,4 +445,59 @@ Bound variables to be used in `--fmt` expression:
 - `CRC`: Message CRC
 - `TsType`: Timestamp type either `create` or `append`
 - `Ts`: Timestamp, `-1` as no value
+
+### Stream Messages to Kafka
+
+Send `README.md` to kafka one line per kafka message
+```
+./scripts/brod pipe -b localhost:9092 -t test-topic -p 0 -s @./README.md
+```
+
+### Resolve Offset
+
+```
+./scripts/brod offset -b localhost:9092 -t test-topic -p 0
+```
+
+### List or Describe Groups
+
+```
+./scripts/brod groups -b localhost:9092
+./scripts/brod groups -b localhost:9092 --describe
+```
+
+### Display Committed Offsets
+
+```
+./scripts/brod commits -b localhost:9092 --id the-group-id
+```
+
+### Commit Offsets
+
+```
+./scripts/brod commits -b localhost:9092 --reset offsets-to-commit.json
+```
+
+NOTE: `--reset <filename>` is designed to force reset offset commit history,
+      not for regular consume + commit usecases.
+
+
+Below is a eterm reset file example.
+(for JSON format, see `priv/offsets-reset-example.json`)
+
+```
+%% retention-seconds is optional, default = -1
+%% NOTE: depending on `offsets.retention.check.interval.ms` config in kafka
+%%       expired offsets may linger for some time.
+
+{"test-group-1",
+ [{"topic-1", [{0, 100}, {1, 201}]},
+  {"topic-2", [{0, 101}]}]}.
+
+{"test-group-2",
+ 0, %% <------- retention seconds
+ [{"topic-1", [{0, 100}, {1, 201}]},
+  {"topic-2", [{0, 101}]}]}.
+
+```
 

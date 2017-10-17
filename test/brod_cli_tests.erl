@@ -122,6 +122,22 @@ groups_test() ->
   assert_no_error(cmd("groups --describe")),
   assert_no_error(cmd("groups --describe --ids all")).
 
+read_offsets_reset_file_test() ->
+  JSON = filename:join([code:priv_dir(brod), "offsets-reset-example.json"]),
+  ETERM = filename:join([code:priv_dir(brod), "offsets-reset-example.eterm"]),
+  Expected = [{<<"test-group-1">>,
+               -1,
+               [{<<"topic-1">>, [{0, 100}, {1, 201}]},
+                {<<"topic-2">>, [{0, 101}]}]},
+              {<<"test-group-2">>,
+               0,
+               [{<<"topic-1">>, [{0, 100}, {1, 201}]},
+                {<<"topic-2">>, [{0, 101}]}]}
+             ],
+  ?assertEqual(Expected, brod_cli:read_offsets_reset_file(JSON)),
+  ?assertEqual(Expected, brod_cli:read_offsets_reset_file(ETERM)),
+  ok.
+
 assert_no_error(Result) ->
   case binary:match(iolist_to_binary(Result), <<"***">>) of
     nomatch -> ok;

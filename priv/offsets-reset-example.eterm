@@ -1,0 +1,10 @@
+%% retention-seconds is optional
+{"test-group-1",
+ [{"topic-1", [{0, 100}, {1, 201}]},
+  {"topic-2", [{0, 101}]}]}.
+
+{"test-group-2",
+ 0, %% <------- set retention-seconds to 0 as in delete
+ [{"topic-1", [{0, 100}, {1, 201}]},
+  {"topic-2", [{0, 101}]}]}.
+

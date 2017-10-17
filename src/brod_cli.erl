@@ -20,6 +20,9 @@
 
 -export([main/2]).
 
+%% exported for test
+-export([read_offsets_reset_file/1]).
+
 -include("brod_int.hrl").
 
 -define(CLIENT, brod_cli_client).
@@ -36,7 +39,7 @@ commands:
   send:    Produce messages
   pipe:    Pipe file or stdin as messages to kafka
   groups:  List or describe consumer group
-  commits: List consumer group offset commits
+  commits: List or reset consumer group offset commits
 ").
 
 %% NOTE: bad indentation at the first line is intended
@@ -135,7 +138,8 @@ options:
                          [default: v]
 "
 ?COMMAND_COMMON_OPTIONS
-"NOTE: Reaching either --count or --wait limit will cause script to exit"
+"NOTE: Reaching either --count or --wait limit will cause script to exit
+"
 ).
 
 -define(SEND_CMD, "send").
@@ -244,6 +248,8 @@ options:
   -b,--brokers=<brokers> Comma separated host:port pairs
                          [default: localhost:9092]
   --id=<group-id>        Comma separated group IDs to describe
+  --reset=<file>         Offsets to reset in a eterm or JSON file
+                         See examples in priv/offsets-reset-example.*
 "
 ?COMMAND_COMMON_OPTIONS
 ).
@@ -494,24 +500,81 @@ run(?GROUPS_CMD, Brokers, SockOpts, Args) ->
   IDs = parse(Args, "--ids", fun parse_cg_ids/1),
   cg(Brokers, SockOpts, IsDesc, IDs);
 run(?COMMITS_CMD, Brokers, SockOpts, Args) ->
-  ID = parse(Args, "--id",
-             fun(?undef) -> erlang:throw(<<"option --id missing">>);
-                (X)      -> X
-             end),
-  commits(Brokers, SockOpts, ID);
+  ID = parse(Args, "--id", fun(X) -> X end),
+  ResetFile = parse(Args, "--reset", fun parse_file/1),
+  case ID =:= ?undef andalso ResetFile =:= ?undef of
+    true -> erlang:throw(<<"option --id, --reset are both missing">>);
+    false -> ok
+  end,
+  case ID =/= ?undef of
+    true ->
+      show_commits(Brokers, SockOpts, ID);
+    false ->
+      reset_commits(Brokers, SockOpts, ResetFile)
+  end;
 run(Cmd, Brokers, SockOpts, Args) ->
   %% Clause for all per-topic commands
   Topic = parse(Args, "--topic", fun bin/1),
   run(Cmd, Brokers, Topic, SockOpts, Args).
 
 %% @private
-commits(BootstrapEndpoints, SockOpts, GroupId) ->
-  case brod:fetch_committed_offsets(BootstrapEndpoints, SockOpts, GroupId) of
+show_commits(BootstrapEndpoints, SockOpts, GroupId) ->
+  case brod_utils:fetch_committed_offsets(BootstrapEndpoints, SockOpts,
+                                          GroupId, []) of
     {ok, PerTopicStructs} ->
       lists:foreach(fun print_commits/1, PerTopicStructs);
     {error, Reason} ->
       logerr("Failed to fetch commited offsets ~p\n", [Reason])
   end.
+
+%% @private
+reset_commits(BootstrapEndpoints, SockOpts, File) ->
+  Groups = read_offsets_reset_file(File),
+  brod_cg_reset:run(BootstrapEndpoints, SockOpts, Groups).
+
+%% @private
+read_offsets_reset_file(File) ->
+  case file:consult(File) of
+    {ok, Groups} ->
+      F = fun Mapfn({ID, Topics}) ->
+                Mapfn({ID, -1, Topics});
+              Mapfn({ID, Retention, Topics}) ->
+                { iolist_to_binary(ID),
+                  Retention,
+                  [{iolist_to_binary(Topic), Partitions}
+                   || {Topic, Partitions} <- Topics]
+                }
+          end,
+      lists:map(F, Groups);
+    {error, _} ->
+      read_offsets_reset_file_json(File)
+  end.
+
+%% @private Have to read JSON file here,
+%% not in brod_cg_reset module because the dependency to jsone
+%% library is only present when bord-cli is built.
+%% @end
+read_offsets_reset_file_json(File) ->
+  {ok, JSON} = file:read_file(File),
+  Get = fun(Name, Props) -> proplists:get_value(Name, Props) end,
+  PartitionOffsetFn =
+    fun(P) -> {Get(<<"partition">>, P), Get(<<"offset">>, P)} end,
+  TopicsFn =
+    fun(T) ->
+        Name = Get(<<"name">>, T),
+        Partitions = Get(<<"partitions">>, T),
+        {Name, lists:map(PartitionOffsetFn, Partitions)}
+    end,
+  lists:map(
+    fun(Group) ->
+        ID = Get(<<"group-id">>, Group),
+        Topics = Get(<<"topics">>, Group),
+        Retention = case Get(<<"retention-seconds">>, Group) of
+                      undefined -> -1;
+                      Value -> Value
+                    end,
+        {ID, Retention, lists:map(TopicsFn, Topics)}
+    end, jsone:decode(JSON, [{object_format, proplist}])).
 
 %% @private
 print_commits(Struct) ->

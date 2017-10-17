@@ -609,13 +609,13 @@ merge_acked_offsets(AckedOffsets, OffsetsToAck) ->
 -spec format_assignments(brod:received_assignments()) -> iodata().
 format_assignments(Assignments) ->
   Groupped =
-    lists:foldl(
+    brod_utils:group_per_key(
       fun(#brod_received_assignment{ topic        = Topic
                                    , partition    = Partition
                                    , begin_offset = Offset
-                                   }, Acc) ->
-        orddict:append_list(Topic, [{Partition, Offset}], Acc)
-      end, [], Assignments),
+                                   }) ->
+          {Topic, {Partition, Offset}}
+      end, Assignments),
   lists:map(
     fun({Topic, Partitions}) ->
       ["\n", Topic, ":", format_partition_assignments(Partitions) ]
@@ -664,15 +664,15 @@ do_commit_offsets_(#state{ groupId                  = GroupId
                          } = State) ->
   Metadata = make_offset_commit_metadata(),
   TopicOffsets0 =
-    lists:foldl(
-      fun({{Topic, Partition}, Offset}, Acc) ->
+    brod_utils:group_per_key(
+      fun({{Topic, Partition}, Offset}) ->
         PartitionOffset =
           [ {partition, Partition}
           , {offset, Offset}
           , {metadata, Metadata}
           ],
-        orddict:append_list(Topic, [PartitionOffset], Acc)
-      end, [], AckedOffsets),
+        {Topic, PartitionOffset}
+      end, AckedOffsets),
   TopicOffsets =
     lists:map(
       fun({Topic, PartitionOffsets}) ->
@@ -876,23 +876,9 @@ get_committed_offsets(#state{ offset_commit_policy = commit_to_kafka_v2
                             , groupId              = GroupId
                             , sock_pid             = SockPid
                             }, TopicPartitions) ->
-  GrouppedPartitions =
-    lists:foldl(fun({T, P}, Dict) ->
-                  orddict:append_list(T, [P], Dict)
-                end, [], TopicPartitions),
-  OffsetFetchRequestTopics =
-    lists:map(
-      fun({Topic, Partitions}) ->
-        [ {topic, Topic}
-        , {partitions, [[{partition, P}] || P <- Partitions]}
-        ]
-      end, GrouppedPartitions),
-  ReqBody =
-    [ {group_id, GroupId}
-    , {topics, OffsetFetchRequestTopics}
-    ],
-  Vsn = 1, %% TODO: pick version
-  Req = kpro:req(offset_fetch_request, Vsn, ReqBody),
+  GrouppedPartitions = brod_utils:group_per_key(TopicPartitions),
+  Req = brod_kafka_request:offset_fetch_request(SockPid, GroupId,
+                                                GrouppedPartitions),
   #kpro_rsp{ tag = offset_fetch_response
            , msg = RspBody
            } = send_sync(SockPid, Req),
@@ -1023,20 +1009,25 @@ log(#state{ groupId  = GroupId
 make_offset_commit_metadata() -> coordinator_id().
 
 %% @private Make group member's user data in join_group_request
-%% This piece of data is currently just a dummy string.
 %%
 %% user_data can be used to share state between group members.
 %% It is originally sent by group members in join_group_request:s,
-%% then received by group leader, group leader (maybe mutate) assigns
-%% it back to members.
+%% then received by group leader, group leader (may mutate it and)
+%% assigns it back to members in topic-partition assignments.
 %%
 %% Currently user_data is created in this module and terminated in this
 %% module, when needed for advanced features, we can originate it from
 %% member's init callback, and pass it to members via
 %% `brod_received_assignments()'
 %% @end
--spec user_data(_) -> binary().
-user_data(_) -> <<"nothing">>.
+-spec user_data(join | assign) -> binary().
+user_data(Action) ->
+  term_to_binary(
+    [ coordinator_info(Action)
+    ]).
+
+coordinator_info(join) -> {<<"member_coordinator">>, self()};
+coordinator_info(assign) -> {<<"leader_coordinator">>, self()}.
 
 %% @private Make a client_id() to be used in the requests sent over the group
 %% coordinator's socket (group coordinator on the other end), this id will be
