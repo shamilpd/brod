@@ -327,9 +327,10 @@ handle_info(?LO_CMD_SEND_HB,
           %% keep waiting for heartbeat response
           {noreply, State};
         false ->
-          %% time to re-discover a new coordinator ?
-          {ok, NewState} = stabilize(State, 0, hb_timeout),
-          {noreply, NewState}
+          %% Recovery from heartbeat timeout
+          %% does not work as expected
+          %% restart socket instead
+          {stop, hb_timeout, State}
       end
   end;
 handle_info({msg, _Pid, #kpro_rsp{ tag     = heartbeat_response
@@ -372,7 +373,7 @@ terminate(Reason, #state{ sock_pid = SockPid
                         , groupId  = GroupId
                         , memberId = MemberId
                         } = State) ->
-  log(State, info, "leaving group, reason: ~p\n", [Reason]),
+  log(State, info, "Leaving group, reason: ~p\n", [Reason]),
   Body = [{group_id, GroupId}, {member_id, MemberId}],
   Request = kpro:req(leave_group_request, _V = 0, Body),
   try
