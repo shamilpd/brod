@@ -118,6 +118,7 @@
              , kv_list/0
              , msg_ts/0
              , message/0
+             , message_set/0
              , offset/0
              , offset_time/0
              , partition/0
@@ -155,6 +156,7 @@
                      | ?OFFSET_EARLIEST
                      | ?OFFSET_LATEST.
 -type message() :: kpro:message().
+-type message_set() :: #kafka_message_set{}.
 -type error_code() :: kpro:error_code().
 
 %% producers
