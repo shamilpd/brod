@@ -162,8 +162,7 @@ debug(Pid, File) when is_list(File) ->
 -spec init(pid(), brod:hostname(), brod:portnum(),
            binary(), [any()]) -> no_return().
 init(Parent, Host, Port, ClientId, Options) ->
-  print("hostname: ~s\n", [Host])
-  print("hostname: ~n\n", [Port])
+  brod_cli:print("hostname: ~s ~n\n", [Host, Port]),
   Debug = sys:debug_options(proplists:get_value(debug, Options, [])),
   Timeout = get_connect_timeout(Options),
   SockOpts = [{active, once}, {packet, raw}, binary, {nodelay, true}],
